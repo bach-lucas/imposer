@@ -1,4 +1,6 @@
 import { ChangeEvent, useEffect, useState } from 'react';
+import { listen } from '@tauri-apps/api/event';
+import { getCurrentWindow } from '@tauri-apps/api/window';
 
 type DocumentItem = { name: string; url: string };
 
@@ -26,6 +28,20 @@ export default function App() {
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
   }, [overlayVisible]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen('toggle-overlay', () => {
+      setOverlayVisible((visible) => !visible);
+      setMessage('Overlay alternado pelo atalho');
+    }).then((stop) => { unlisten = stop; });
+    return () => unlisten?.();
+  }, []);
+
+  useEffect(() => {
+    if (!('__TAURI_INTERNALS__' in window)) return;
+    getCurrentWindow().setIgnoreCursorEvents(protectedMode).catch(() => undefined);
+  }, [protectedMode]);
 
   function handlePdfSelected(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
