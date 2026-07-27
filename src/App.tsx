@@ -42,6 +42,15 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    listen('toggle-protected', () => {
+      setProtectedMode((value) => !value);
+      setMessage('Modo de cliques alternado pelo atalho');
+    }).then((stop) => { unlisten = stop; }).catch(() => undefined);
+    return () => unlisten?.();
+  }, []);
+
+  useEffect(() => {
     if (!('__TAURI_INTERNALS__' in window)) return;
     getCurrentWindow().setIgnoreCursorEvents(protectedMode).catch(() => undefined);
   }, [protectedMode]);
@@ -70,7 +79,7 @@ export default function App() {
         <div className="heading"><div><p className="eyebrow">ASSISTENTE DE REFERENCIA</p><h1>A jornada continua.<br /><em>O contexto fica com voce.</em></h1><p className="subtitle">Guias, mapas e informacoes do Elden Ring quando voce precisar — sem interromper o jogo.</p></div><label className="primary-button">+ Adicionar guia<input type="file" accept="application/pdf" onChange={handlePdfSelected} /></label></div>
 
         <section className="overlay-card" style={{ opacity: overlayVisible ? opacity / 100 : 0.32 }}>
-          <div className="overlay-toolbar"><div><span className="live-dot" /> MODO OVERLAY <small>· GUIA ATIVO</small></div><div className="toolbar-actions"><button onClick={() => setProtectedMode((value) => !value)} className={protectedMode ? 'toolbar-button selected' : 'toolbar-button'}>{protectedMode ? '♙ Cliques protegidos' : '♙ Interagir com o guia'}</button><button onClick={() => setOverlayVisible(false)} className="toolbar-button">Ocultar</button></div></div>
+          <div className="overlay-toolbar"><div><span className="live-dot" /> MODO OVERLAY <small>· GUIA ATIVO</small></div><div className="toolbar-actions"><button onClick={() => setProtectedMode((value) => !value)} className={protectedMode ? 'toolbar-button selected' : 'toolbar-button'}>{protectedMode ? '♙ Cliques protegidos · Ctrl + L' : '♙ Interagir · Ctrl + L'}</button><button onClick={() => setOverlayVisible(false)} className="toolbar-button">Ocultar</button></div></div>
           <div className="pdf-stage">
             {document.url ? <iframe title={document.name} src={document.url} /> : <div className="empty-pdf"><div className="assistant-mark">✦</div><h2>O que voce precisa consultar?</h2><p>Adicione um guia em PDF e eu mantenho tudo pronto para a sua proxima sessao.</p><label className="secondary-button">Adicionar primeiro guia<input type="file" accept="application/pdf" onChange={handlePdfSelected} /></label></div>}
           </div>
