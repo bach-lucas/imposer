@@ -1,8 +1,57 @@
-import { ChangeEvent, useEffect, useState } from 'react';
+import { ChangeEvent, useEffect, useRef, useState } from 'react';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import * as pdfjsLib from 'pdfjs-dist';
+import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
+
+pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('../node_modules/pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString();
 
 type DocumentItem = { name: string; url: string };
+
+function PdfViewer({ url, name }: { url: string; name: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
+  const [page, setPage] = useState(1);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(false);
+    setPage(1);
+
+    pdfjsLib.getDocument(url).promise.then((loadedPdf) => {
+      if (!cancelled) setPdf(loadedPdf);
+    }).catch(() => {
+      if (!cancelled) { setError(true); setLoading(false); }
+    });
+
+    return () => { cancelled = true; };
+  }, [url]);
+
+  useEffect(() => {
+    if (!pdf || !canvasRef.current) return;
+    let cancelled = false;
+    setLoading(true);
+    pdf.getPage(page).then((pdfPage) => {
+      if (cancelled || !canvasRef.current) return;
+      const viewport = pdfPage.getViewport({ scale: 1.35 });
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      return pdfPage.render({ canvas, canvasContext: context, viewport }).promise;
+    }).then(() => { if (!cancelled) setLoading(false); }).catch(() => { if (!cancelled) setError(true); });
+
+    return () => { cancelled = true; };
+  }, [pdf, page]);
+
+  if (error) return <div className="pdf-error"><strong>Nao foi possivel abrir este PDF.</strong><span>Tente importar o arquivo novamente.</span></div>;
+
+  return <div className="pdf-reader"><div className="pdf-page-wrap"><canvas ref={canvasRef} aria-label={`Pagina ${page} de ${pdf?.numPages ?? '...'}`} />{loading && <span className="pdf-loading">Carregando guia...</span>}</div><div className="pdf-controls"><button disabled={!pdf || page <= 1} onClick={() => setPage((value) => value - 1)}>← Anterior</button><span>{page} / {pdf?.numPages ?? '...'}</span><strong title={name}>{name}</strong><button disabled={!pdf || page >= (pdf?.numPages ?? 1)} onClick={() => setPage((value) => value + 1)}>Proxima →</button></div></div>;
+}
 
 const INITIAL_DOCUMENT: DocumentItem = {
   name: 'Adicione seu primeiro guia em PDF',
@@ -81,7 +130,7 @@ export default function App() {
         <section className="overlay-card" style={{ opacity: overlayVisible ? opacity / 100 : 0.32 }}>
           <div className="overlay-toolbar"><div><span className="live-dot" /> MODO OVERLAY <small>· GUIA ATIVO</small></div><div className="toolbar-actions"><button onClick={() => setProtectedMode((value) => !value)} className={protectedMode ? 'toolbar-button selected' : 'toolbar-button'}>{protectedMode ? '♙ Cliques protegidos · Ctrl + L' : '♙ Interagir · Ctrl + L'}</button><button onClick={() => setOverlayVisible(false)} className="toolbar-button">Ocultar</button></div></div>
           <div className="pdf-stage">
-            {document.url ? <iframe title={document.name} src={document.url} /> : <div className="empty-pdf"><div className="assistant-mark">✦</div><h2>O que voce precisa consultar?</h2><p>Adicione um guia em PDF e eu mantenho tudo pronto para a sua proxima sessao.</p><label className="secondary-button">Adicionar primeiro guia<input type="file" accept="application/pdf" onChange={handlePdfSelected} /></label></div>}
+            {document.url ? <PdfViewer name={document.name} url={document.url} /> : <div className="empty-pdf"><div className="assistant-mark">✦</div><h2>O que voce precisa consultar?</h2><p>Adicione um guia em PDF e eu mantenho tudo pronto para a sua proxima sessao.</p><label className="secondary-button">Adicionar primeiro guia<input type="file" accept="application/pdf" onChange={handlePdfSelected} /></label></div>}
           </div>
           <div className="overlay-footer"><span>{document.name}</span><span>{protectedMode ? 'Cliques passam para o jogo' : 'Modo interacao ativo'} · Opacidade {opacity}%</span></div>
         </section>
