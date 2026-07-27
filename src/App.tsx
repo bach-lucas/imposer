@@ -35,7 +35,9 @@ export default function App() {
     listen('toggle-overlay', () => {
       setOverlayVisible((visible) => !visible);
       setMessage('Overlay alternado pelo atalho');
-    }).then((stop) => { unlisten = stop; });
+    }).then((stop) => { unlisten = stop; }).catch(() => {
+      setMessage('Atalho global indisponivel nesta sessao');
+    });
     return () => unlisten?.();
   }, []);
 
