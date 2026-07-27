@@ -18,6 +18,7 @@ export default function App() {
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
+      if ('__TAURI_INTERNALS__' in window) return;
       if (event.ctrlKey && event.key === 'F8') {
         event.preventDefault();
         setOverlayVisible((visible) => !visible);
