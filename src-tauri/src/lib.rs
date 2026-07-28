@@ -154,7 +154,7 @@ fn run_erdb_import(game_dir: String) -> Result<ErdbImportResult, String> {
 
     let source = Command::new(&python).args(["-m", "erdb", "source", "--game-dir"]).arg(&game_path).arg("--keep-cache").output().map_err(|error| format!("Nao foi possivel executar o ERDB: {error}"))?;
     if !source.status.success() {
-        let details = String::from_utf8_lossy(&source.stderr);
+        let details = format!("{}\n{}", String::from_utf8_lossy(&source.stdout), String::from_utf8_lossy(&source.stderr));
         if details.contains("Unknown DCX format") {
             return Err("O ERDB foi executado, mas esta versao nao suporta o formato atual do regulation.bin (Elden Ring 1.12 ou posterior). O UXM e o .NET estao funcionando; precisamos usar um parser atualizado, como Smithbox/WitchyBND.".to_string());
         }
