@@ -64,7 +64,7 @@ function OverlayApp() {
     getCurrentWindow().setIgnoreCursorEvents(protectedMode).catch(() => undefined);
   }, [protectedMode]);
 
-  return <main className="overlay-shell"><div className="overlay-card overlay-window-card"><div className="overlay-toolbar"><div><span className="live-dot" /> GUIA ATIVO <small>· {protectedMode ? 'CLIQUES PROTEGIDOS' : 'MODO INTERACAO'}</small></div><button className={protectedMode ? 'toolbar-button selected' : 'toolbar-button'} onClick={() => setProtectedMode((value) => !value)}>Ctrl + L</button></div>{document ? <PdfViewer document={document} /> : <div className="overlay-empty"><div className="assistant-mark">✦</div><strong>Nenhum guia aberto</strong><span>Abra um PDF no Imposer e pressione Ctrl + F8.</span></div>}</div></main>;
+  return <main className="overlay-shell"><div className="overlay-card overlay-window-card"><div className="overlay-toolbar"><div><span className="live-dot" /> GUIA ATIVO <small>· {protectedMode ? 'CLIQUES PROTEGIDOS' : 'MODO INTERACAO'}</small></div><div className="overlay-toolbar-actions"><button className={protectedMode ? 'toolbar-button selected' : 'toolbar-button'} onClick={() => setProtectedMode((value) => !value)}>Ctrl + L</button><button className="close-overlay" onClick={() => getCurrentWindow().hide()} title="Fechar overlay">×</button></div></div>{document ? <PdfViewer document={document} /> : <div className="overlay-empty"><div className="assistant-mark">✦</div><strong>Nenhum guia aberto</strong><span>Abra um PDF no Imposer e pressione Ctrl + F8.</span></div>}</div></main>;
 }
 
 export default function App() {
