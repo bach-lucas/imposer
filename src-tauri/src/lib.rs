@@ -8,6 +8,21 @@ fn open_overlay(app: AppHandle) -> Result<(), String> {
     let overlay = app.get_webview_window("overlay").ok_or("janela overlay nao encontrada")?;
     overlay.show().map_err(|error| error.to_string())?;
     overlay.set_always_on_top(true).map_err(|error| error.to_string())?;
+    if let Some(main) = app.get_webview_window("main") {
+        main.hide().map_err(|error| error.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn close_overlay(app: AppHandle) -> Result<(), String> {
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        overlay.hide().map_err(|error| error.to_string())?;
+    }
+    if let Some(main) = app.get_webview_window("main") {
+        main.show().map_err(|error| error.to_string())?;
+        main.set_focus().map_err(|error| error.to_string())?;
+    }
     Ok(())
 }
 
@@ -55,7 +70,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![open_overlay])
+        .invoke_handler(tauri::generate_handler![open_overlay, close_overlay])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Imposer");
 }
