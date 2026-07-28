@@ -19,9 +19,12 @@ pub fn run() {
                             if event.state() == ShortcutState::Pressed {
                                 if shortcut == &toggle_shortcut {
                                     if let Some(window) = app_handle.get_webview_window("main") {
-                                        let _ = window.show();
+                                        if window.is_visible().unwrap_or(true) {
+                                            let _ = window.hide();
+                                        } else {
+                                            let _ = window.show();
+                                        }
                                     }
-                                    let _ = app_handle.emit("toggle-overlay", ());
                                 } else if shortcut == &protection_shortcut {
                                     let _ = app_handle.emit("toggle-protected", ());
                                 }
