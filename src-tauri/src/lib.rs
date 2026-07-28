@@ -138,8 +138,7 @@ fn run_erdb_import(game_dir: String) -> Result<ErdbImportResult, String> {
         return Err("A pasta Game valida nao foi encontrada.".to_string());
     }
     let item_message = game_path.join("msg").join("engus").join("item.msgbnd.txt");
-    let item_archive = game_path.join("msg").join("engus").join("item.msgbnd.dcx");
-    if !item_message.is_file() && !item_archive.is_file() {
+    if !item_message.is_file() {
         return Err("regulation.bin foi encontrado, mas os arquivos UXM ainda nao foram desempacotados. No UXM, use View Files, selecione msg\\engus\\item.msgbnd.txt, marque Use Selected Files e clique em Unpack. Nao use Patch.".to_string());
     }
 
