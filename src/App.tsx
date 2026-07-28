@@ -20,11 +20,12 @@ function PdfViewer({ document }: { document: DocumentItem }) {
   const pageWrapRef = useRef<HTMLDivElement>(null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
+  const [zoom, setZoom] = useState(1.1);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setPage(1); setError(false);
+    setPage(1); setZoom(1.1); setError(false);
     pdfjsLib.getDocument(document.dataUrl).promise.then((loaded) => { if (!cancelled) setPdf(loaded); }).catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
   }, [document.dataUrl]);
@@ -40,17 +41,16 @@ function PdfViewer({ document }: { document: DocumentItem }) {
       const baseViewport = pdfPage.getViewport({ scale: 1 });
       const bounds = pageWrapRef.current?.getBoundingClientRect();
       const availableWidth = Math.max((bounds?.width ?? baseViewport.width) - 28, 120);
-      const availableHeight = Math.max((bounds?.height ?? baseViewport.height) - 28, 120);
-      const scale = Math.min(availableWidth / baseViewport.width, availableHeight / baseViewport.height);
+      const scale = (availableWidth / baseViewport.width) * zoom;
       const viewport = pdfPage.getViewport({ scale: Math.max(scale, 0.1) });
       canvas.width = viewport.width; canvas.height = viewport.height;
       return pdfPage.render({ canvas, canvasContext: context, viewport }).promise;
     }).catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
-  }, [pdf, page]);
+  }, [pdf, page, zoom]);
 
   if (error) return <div className="pdf-error"><strong>Nao foi possivel abrir este PDF.</strong><span>Importe o arquivo novamente.</span></div>;
-  return <div className="pdf-reader"><div ref={pageWrapRef} className="pdf-page-wrap"><canvas ref={canvasRef} /></div><div className="pdf-controls"><button disabled={!pdf || page <= 1} onClick={() => setPage((value) => value - 1)}>← Anterior</button><span>{page} / {pdf?.numPages ?? '...'}</span><strong>{document.name}</strong><button disabled={!pdf || page >= (pdf?.numPages ?? 1)} onClick={() => setPage((value) => value + 1)}>Proxima →</button></div></div>;
+  return <div className="pdf-reader"><div ref={pageWrapRef} className="pdf-page-wrap"><canvas ref={canvasRef} /></div><div className="pdf-controls"><button disabled={!pdf || page <= 1} onClick={() => setPage((value) => value - 1)}>← Anterior</button><span>{page} / {pdf?.numPages ?? '...'}</span><strong>{document.name}</strong><div className="zoom-controls"><button onClick={() => setZoom((value) => Math.max(0.75, value - 0.1))}>−</button><span>{Math.round(zoom * 100)}%</span><button onClick={() => setZoom((value) => Math.min(2, value + 0.1))}>+</button></div><button disabled={!pdf || page >= (pdf?.numPages ?? 1)} onClick={() => setPage((value) => value + 1)}>Proxima →</button></div></div>;
 }
 
 function OverlayApp() {
@@ -70,7 +70,7 @@ function OverlayApp() {
     getCurrentWindow().setIgnoreCursorEvents(protectedMode).catch(() => undefined);
   }, [protectedMode]);
 
-  return <main className="overlay-shell"><div className="overlay-card overlay-window-card"><div className="overlay-toolbar"><div><span className="live-dot" /> GUIA ATIVO <small>· {protectedMode ? 'CLIQUES PROTEGIDOS' : 'MODO INTERACAO'}</small></div><div className="overlay-toolbar-actions"><button className={protectedMode ? 'toolbar-button selected' : 'toolbar-button'} onClick={() => setProtectedMode((value) => !value)}>Ctrl + L</button><button className="close-overlay" onClick={() => invoke('close_overlay')} title="Fechar overlay">×</button></div></div>{document ? <PdfViewer document={document} /> : <div className="overlay-empty"><div className="assistant-mark">✦</div><strong>Nenhum guia aberto</strong><span>Abra um PDF no Imposer e pressione Ctrl + F8.</span></div>}</div></main>;
+  return <main className="overlay-shell"><div className="overlay-card overlay-window-card"><div className="overlay-toolbar"><div className="overlay-drag-handle" data-tauri-drag-region><span className="live-dot" /> GUIA ATIVO <small>· {protectedMode ? 'CLIQUES PROTEGIDOS' : 'MODO INTERACAO'}</small></div><div className="overlay-toolbar-actions"><button className={protectedMode ? 'toolbar-button selected' : 'toolbar-button'} onClick={() => setProtectedMode((value) => !value)}>Ctrl + L</button><button className="close-overlay" onClick={() => invoke('close_overlay')} title="Fechar overlay">×</button></div></div>{document ? <PdfViewer document={document} /> : <div className="overlay-empty"><div className="assistant-mark">✦</div><strong>Nenhum guia aberto</strong><span>Abra um PDF no Imposer e pressione Ctrl + F8.</span></div>}</div></main>;
 }
 
 export default function App() {
