@@ -21,6 +21,23 @@
         "resizable": true,
         "decorations": true,
         "alwaysOnTop": false
+      },
+      {
+        "label": "overlay",
+        "title": "Imposer Overlay",
+        "url": "index.html",
+        "width": 680,
+        "height": 560,
+        "minWidth": 420,
+        "minHeight": 320,
+        "visible": false,
+        "alwaysOnTop": true,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "skipTaskbar": true,
+        "resizable": true,
+        "focusable": true
       }
     ],
     "security": { "csp": null }

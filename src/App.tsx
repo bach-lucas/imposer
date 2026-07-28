@@ -1,143 +1,90 @@
 import { ChangeEvent, useEffect, useRef, useState } from 'react';
-import { listen } from '@tauri-apps/api/event';
+import { emit, listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { invoke } from '@tauri-apps/api/core';
 import * as pdfjsLib from 'pdfjs-dist';
 import type { PDFDocumentProxy } from 'pdfjs-dist/types/src/display/api';
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('../node_modules/pdfjs-dist/build/pdf.worker.mjs', import.meta.url).toString();
 
-type DocumentItem = { name: string; url: string };
+type DocumentItem = { name: string; dataUrl: string };
+const DOCUMENT_KEY = 'imposer.current-document';
 
-function PdfViewer({ url, name }: { url: string; name: string }) {
+function readDocument(): DocumentItem | null {
+  const stored = localStorage.getItem(DOCUMENT_KEY);
+  return stored ? JSON.parse(stored) as DocumentItem : null;
+}
+
+function PdfViewer({ document }: { document: DocumentItem }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [pdf, setPdf] = useState<PDFDocumentProxy | null>(null);
   const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
-    setError(false);
-    setPage(1);
-
-    pdfjsLib.getDocument(url).promise.then((loadedPdf) => {
-      if (!cancelled) setPdf(loadedPdf);
-    }).catch(() => {
-      if (!cancelled) { setError(true); setLoading(false); }
-    });
-
+    setPage(1); setError(false);
+    pdfjsLib.getDocument(document.dataUrl).promise.then((loaded) => { if (!cancelled) setPdf(loaded); }).catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
-  }, [url]);
+  }, [document.dataUrl]);
 
   useEffect(() => {
     if (!pdf || !canvasRef.current) return;
     let cancelled = false;
-    setLoading(true);
     pdf.getPage(page).then((pdfPage) => {
       if (cancelled || !canvasRef.current) return;
-      const viewport = pdfPage.getViewport({ scale: 1.35 });
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
       if (!context) return;
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
+      const viewport = pdfPage.getViewport({ scale: 1.25 });
+      canvas.width = viewport.width; canvas.height = viewport.height;
       return pdfPage.render({ canvas, canvasContext: context, viewport }).promise;
-    }).then(() => { if (!cancelled) setLoading(false); }).catch(() => { if (!cancelled) setError(true); });
-
+    }).catch(() => { if (!cancelled) setError(true); });
     return () => { cancelled = true; };
   }, [pdf, page]);
 
-  if (error) return <div className="pdf-error"><strong>Nao foi possivel abrir este PDF.</strong><span>Tente importar o arquivo novamente.</span></div>;
-
-  return <div className="pdf-reader"><div className="pdf-page-wrap"><canvas ref={canvasRef} aria-label={`Pagina ${page} de ${pdf?.numPages ?? '...'}`} />{loading && <span className="pdf-loading">Carregando guia...</span>}</div><div className="pdf-controls"><button disabled={!pdf || page <= 1} onClick={() => setPage((value) => value - 1)}>← Anterior</button><span>{page} / {pdf?.numPages ?? '...'}</span><strong title={name}>{name}</strong><button disabled={!pdf || page >= (pdf?.numPages ?? 1)} onClick={() => setPage((value) => value + 1)}>Proxima →</button></div></div>;
+  if (error) return <div className="pdf-error"><strong>Nao foi possivel abrir este PDF.</strong><span>Importe o arquivo novamente.</span></div>;
+  return <div className="pdf-reader"><div className="pdf-page-wrap"><canvas ref={canvasRef} /></div><div className="pdf-controls"><button disabled={!pdf || page <= 1} onClick={() => setPage((value) => value - 1)}>← Anterior</button><span>{page} / {pdf?.numPages ?? '...'}</span><strong>{document.name}</strong><button disabled={!pdf || page >= (pdf?.numPages ?? 1)} onClick={() => setPage((value) => value + 1)}>Proxima →</button></div></div>;
 }
 
-const INITIAL_DOCUMENT: DocumentItem = {
-  name: 'Adicione seu primeiro guia em PDF',
-  url: '',
-};
-
-export default function App() {
-  const [document, setDocument] = useState<DocumentItem>(INITIAL_DOCUMENT);
-  const [overlayVisible, setOverlayVisible] = useState(true);
+function OverlayApp() {
+  const [document, setDocument] = useState<DocumentItem | null>(readDocument);
   const [protectedMode, setProtectedMode] = useState(false);
-  const [opacity, setOpacity] = useState(92);
-  const [message, setMessage] = useState('Pronto para adicionar um guia');
 
   useEffect(() => {
-    const handleShortcut = (event: KeyboardEvent) => {
-      if ('__TAURI_INTERNALS__' in window) return;
-      if (event.ctrlKey && event.key === 'F8') {
-        event.preventDefault();
-        setOverlayVisible((visible) => !visible);
-        setMessage(overlayVisible ? 'Overlay oculto' : 'Overlay visivel');
-      }
-    };
-
-    window.addEventListener('keydown', handleShortcut);
-    return () => window.removeEventListener('keydown', handleShortcut);
-  }, [overlayVisible]);
-
-  useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    listen('toggle-overlay', () => {
-      setOverlayVisible((visible) => !visible);
-      setMessage('Overlay alternado pelo atalho');
-    }).then((stop) => { unlisten = stop; }).catch(() => {
-      setMessage('Atalho global indisponivel nesta sessao');
-    });
-    return () => unlisten?.();
+    const refresh = () => setDocument(readDocument());
+    let stopDocument: (() => void) | undefined;
+    let stopProtected: (() => void) | undefined;
+    listen('document-updated', refresh).then((stop) => { stopDocument = stop; });
+    listen('toggle-protected', () => setProtectedMode((value) => !value)).then((stop) => { stopProtected = stop; });
+    return () => { stopDocument?.(); stopProtected?.(); };
   }, []);
 
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    listen('toggle-protected', () => {
-      setProtectedMode((value) => !value);
-      setMessage('Modo de cliques alternado pelo atalho');
-    }).then((stop) => { unlisten = stop; }).catch(() => undefined);
-    return () => unlisten?.();
-  }, []);
-
-  useEffect(() => {
-    if (!('__TAURI_INTERNALS__' in window)) return;
     getCurrentWindow().setIgnoreCursorEvents(protectedMode).catch(() => undefined);
   }, [protectedMode]);
 
-  function handlePdfSelected(event: ChangeEvent<HTMLInputElement>) {
+  return <main className="overlay-shell"><div className="overlay-card overlay-window-card"><div className="overlay-toolbar"><div><span className="live-dot" /> GUIA ATIVO <small>· {protectedMode ? 'CLIQUES PROTEGIDOS' : 'MODO INTERACAO'}</small></div><button className={protectedMode ? 'toolbar-button selected' : 'toolbar-button'} onClick={() => setProtectedMode((value) => !value)}>Ctrl + L</button></div>{document ? <PdfViewer document={document} /> : <div className="overlay-empty"><div className="assistant-mark">✦</div><strong>Nenhum guia aberto</strong><span>Abra um PDF no Imposer e pressione Ctrl + F8.</span></div>}</div></main>;
+}
+
+export default function App() {
+  const [document, setDocument] = useState<DocumentItem | null>(() => readDocument());
+  const [overlayVisible, setOverlayVisible] = useState(true);
+  const [message, setMessage] = useState('Pronto para adicionar um guia');
+  const [opacity, setOpacity] = useState(92);
+  const currentWindow = getCurrentWindow();
+
+  if (currentWindow.label === 'overlay') return <OverlayApp />;
+
+  async function handlePdfSelected(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) return;
-
-    setDocument({ name: file.name, url: URL.createObjectURL(file) });
-    setMessage('PDF carregado nesta sessao');
+    const dataUrl = await new Promise<string>((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(String(reader.result)); reader.onerror = reject; reader.readAsDataURL(file); });
+    const nextDocument = { name: file.name, dataUrl };
+    localStorage.setItem(DOCUMENT_KEY, JSON.stringify(nextDocument));
+    setDocument(nextDocument); setMessage('PDF carregado nesta sessao');
+    await emit('document-updated');
   }
 
-  return (
-    <main className="app-shell">
-      <aside className="sidebar">
-        <div className="brand"><span className="brand-mark">i</span><span>imposer</span></div>
-        <p className="section-label">WORKSPACE</p>
-        <button className="nav-item active">▦ <span>Meu espaco</span></button>
-        <p className="section-label library-label">JOGO ATUAL</p>
-        <div className="game-card"><span className="game-dot" /><div><strong>Elden Ring</strong><small>Workspace ativo</small></div></div>
-        <div className="sidebar-footer"><span className="online-dot" /> Modo local</div>
-      </aside>
-
-      <section className="workspace">
-        <header className="topbar"><div><span className="muted">Meu espaco /</span> Elden Ring</div><div className="session-status"><span className="online-dot" /> Assistente pronto <kbd>Ctrl + F8</kbd></div></header>
-        <div className="heading"><div><p className="eyebrow">ASSISTENTE DE REFERENCIA</p><h1>A jornada continua.<br /><em>O contexto fica com voce.</em></h1><p className="subtitle">Guias, mapas e informacoes do Elden Ring quando voce precisar — sem interromper o jogo.</p></div><label className="primary-button">+ Adicionar guia<input type="file" accept="application/pdf" onChange={handlePdfSelected} /></label></div>
-
-        <section className="overlay-card" style={{ opacity: overlayVisible ? opacity / 100 : 0.32 }}>
-          <div className="overlay-toolbar"><div><span className="live-dot" /> MODO OVERLAY <small>· GUIA ATIVO</small></div><div className="toolbar-actions"><button onClick={() => setProtectedMode((value) => !value)} className={protectedMode ? 'toolbar-button selected' : 'toolbar-button'}>{protectedMode ? '♙ Cliques protegidos · Ctrl + L' : '♙ Interagir · Ctrl + L'}</button><button onClick={() => setOverlayVisible(false)} className="toolbar-button">Ocultar</button></div></div>
-          <div className="pdf-stage">
-            {document.url ? <PdfViewer name={document.name} url={document.url} /> : <div className="empty-pdf"><div className="assistant-mark">✦</div><h2>O que voce precisa consultar?</h2><p>Adicione um guia em PDF e eu mantenho tudo pronto para a sua proxima sessao.</p><label className="secondary-button">Adicionar primeiro guia<input type="file" accept="application/pdf" onChange={handlePdfSelected} /></label></div>}
-          </div>
-          <div className="overlay-footer"><span>{document.name}</span><span>{protectedMode ? 'Cliques passam para o jogo' : 'Modo interacao ativo'} · Opacidade {opacity}%</span></div>
-        </section>
-
-        <section className="next-section"><div><p className="eyebrow">CONHECIMENTO DO ELDEN RING</p><h2>Catalogo de itens</h2><p>Encontre o que precisa por nome, categoria, localizacao ou vendedor.</p></div><span className="coming-soon">EM BREVE</span></section>
-        <footer className="status-bar"><span className="status-indicator" /> {message}<label>Opacidade <input type="range" min="50" max="100" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /> {opacity}%</label></footer>
-      </section>
-    </main>
-  );
+  return <main className="app-shell"><aside className="sidebar"><div className="brand"><span className="brand-mark">i</span><span>imposer</span></div><p className="section-label">WORKSPACE</p><button className="nav-item active">▦ <span>Meu espaco</span></button><p className="section-label library-label">JOGO ATUAL</p><div className="game-card"><span className="game-dot" /><div><strong>Elden Ring</strong><small>Workspace ativo</small></div></div><div className="sidebar-footer"><span className="online-dot" /> Modo local</div></aside><section className="workspace"><header className="topbar"><div><span className="muted">Meu espaco /</span> Elden Ring</div><div className="session-status"><span className="online-dot" /> Assistente pronto <kbd>Ctrl + F8</kbd></div></header><div className="heading"><div><p className="eyebrow">ASSISTENTE DE REFERENCIA</p><h1>A jornada continua.<br /><em>O contexto fica com voce.</em></h1><p className="subtitle">Guias, mapas e informacoes do Elden Ring quando voce precisar — sem interromper o jogo.</p></div><div className="heading-actions"><button className="secondary-button" onClick={() => invoke('open_overlay')}>Abrir overlay</button><label className="primary-button">+ Adicionar guia<input type="file" accept="application/pdf" onChange={handlePdfSelected} /></label></div></div><section className="workspace-preview" style={{ opacity: overlayVisible ? opacity / 100 : 1 }}><div className="preview-header"><span>ULTIMO GUIA</span><strong>{document?.name ?? 'Nenhum guia adicionado'}</strong></div>{document ? <PdfViewer document={document} /> : <div className="empty-pdf"><div className="assistant-mark">✦</div><h2>O que voce precisa consultar?</h2><p>Adicione um guia em PDF para preparar seu espaco de Elden Ring.</p><label className="secondary-button">Adicionar primeiro guia<input type="file" accept="application/pdf" onChange={handlePdfSelected} /></label></div>}</section><section className="next-section"><div><p className="eyebrow">CONHECIMENTO DO ELDEN RING</p><h2>Catalogo de itens</h2><p>Encontre o que precisa por nome, categoria, localizacao ou vendedor.</p></div><span className="coming-soon">EM BREVE</span></section><footer className="status-bar"><span className="status-indicator" /> {message}<label>Opacidade <input type="range" min="50" max="100" value={opacity} onChange={(event) => setOpacity(Number(event.target.value))} /> {opacity}%</label></footer></section></main>;
 }

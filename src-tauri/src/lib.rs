@@ -1,7 +1,15 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use tauri::{Emitter, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+#[tauri::command]
+fn open_overlay(app: AppHandle) -> Result<(), String> {
+    let overlay = app.get_webview_window("overlay").ok_or("janela overlay nao encontrada")?;
+    overlay.show().map_err(|error| error.to_string())?;
+    overlay.set_always_on_top(true).map_err(|error| error.to_string())?;
+    Ok(())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -18,7 +26,7 @@ pub fn run() {
                         .with_handler(move |_app, shortcut, event| {
                             if event.state() == ShortcutState::Pressed {
                                 if shortcut == &toggle_shortcut {
-                                    if let Some(window) = app_handle.get_webview_window("main") {
+                                    if let Some(window) = app_handle.get_webview_window("overlay") {
                                         if window.is_visible().unwrap_or(true) {
                                             let _ = window.hide();
                                         } else {
@@ -26,7 +34,7 @@ pub fn run() {
                                         }
                                     }
                                 } else if shortcut == &protection_shortcut {
-                                    let _ = app_handle.emit("toggle-protected", ());
+                                    let _ = app_handle.emit_to("overlay", "toggle-protected", ());
                                 }
                             }
                         })
@@ -39,6 +47,7 @@ pub fn run() {
 
             Ok(())
         })
+        .invoke_handler(tauri::generate_handler![open_overlay])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Imposer");
 }
