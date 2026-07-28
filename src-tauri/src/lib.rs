@@ -162,7 +162,7 @@ fn run_erdb_import(game_dir: String) -> Result<ErdbImportResult, String> {
     let generated = Command::new(&python).arg(&script).arg(&game_path).arg(&output_dir).arg(&witchy).output().map_err(|error| format!("Nao foi possivel executar o conversor local: {error}"))?;
     if !generated.status.success() { return Err(format!("O parser local falhou: {}", String::from_utf8_lossy(&generated.stderr))); }
 
-    Ok(ErdbImportResult { output_dir: output_dir.to_string_lossy().into_owned(), message: "Catalogo local gerado pelo ERDB.".to_string() })
+    Ok(ErdbImportResult { output_dir: output_dir.to_string_lossy().into_owned(), message: "Catalogo local gerado pelo WitchyBND.".to_string() })
 }
 
 #[tauri::command]

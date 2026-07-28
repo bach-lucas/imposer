@@ -87,7 +87,7 @@ function GamePathControl() {
       setInstallation(result);
       setRegulation(result.has_regulation ? await invoke<RegulationInspection>('inspect_regulation', { path: `${result.folder}\\regulation.bin` }) : null);
       if (result.valid) {
-        setImportMessage('Iniciando ERDB local...');
+        setImportMessage('Iniciando parser local...');
         invoke<ErdbImportResult>('run_erdb_import', { gameDir: result.folder }).then((imported) => setImportMessage(`${imported.message} Arquivos salvos em %LOCALAPPDATA%\\Imposer\\catalog.`)).catch((reason) => setError(String(reason)));
       }
       if (!result.valid) setError('Arquivos esperados não encontrados.');
