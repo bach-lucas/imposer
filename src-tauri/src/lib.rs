@@ -1,5 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use serde::Serialize;
+use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -24,6 +26,40 @@ fn close_overlay(app: AppHandle) -> Result<(), String> {
         main.set_focus().map_err(|error| error.to_string())?;
     }
     Ok(())
+}
+
+#[derive(Debug, Serialize)]
+struct GameInstallation {
+    folder: String,
+    has_regulation: bool,
+    has_data: bool,
+    valid: bool,
+}
+
+#[tauri::command]
+fn validate_game_folder(path: String) -> Result<GameInstallation, String> {
+    let selected = PathBuf::from(path.trim());
+    if !selected.is_dir() {
+        return Err("A pasta selecionada nao existe.".to_string());
+    }
+
+    let game_dir = if selected.join("regulation.bin").is_file() {
+        selected
+    } else if selected.join("Game").is_dir() {
+        selected.join("Game")
+    } else {
+        selected
+    };
+
+    let has_regulation = game_dir.join("regulation.bin").is_file();
+    let has_data = game_dir.join("Data0.bdt").is_file() || game_dir.join("data0.bdt").is_file();
+
+    Ok(GameInstallation {
+        folder: game_dir.to_string_lossy().into_owned(),
+        has_regulation,
+        has_data,
+        valid: has_regulation && has_data,
+    })
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -70,7 +106,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![open_overlay, close_overlay])
+        .invoke_handler(tauri::generate_handler![open_overlay, close_overlay, validate_game_folder])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Imposer");
 }
