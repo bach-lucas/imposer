@@ -26,6 +26,11 @@ pub fn run() {
                         .with_handler(move |_app, shortcut, event| {
                             if event.state() == ShortcutState::Pressed {
                                 if shortcut == &toggle_shortcut {
+                                    if let Some(main_window) = app_handle.get_webview_window("main") {
+                                        if main_window.is_focused().unwrap_or(false) {
+                                            return;
+                                        }
+                                    }
                                     if let Some(window) = app_handle.get_webview_window("overlay") {
                                         if window.is_visible().unwrap_or(true) {
                                             let _ = window.hide();
