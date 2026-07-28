@@ -1,6 +1,8 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
+use serde_json::Value;
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::process::Command;
@@ -61,6 +63,72 @@ fn inspect_regulation(path: String) -> Result<RegulationInspection, String> {
 struct ErdbImportResult {
     output_dir: String,
     message: String,
+}
+
+#[derive(Debug, Serialize)]
+struct CatalogEntry {
+    name: String,
+    category: String,
+    icon: String,
+    description: String,
+    location: String,
+    acquisition: String,
+    vendor: String,
+    sellable: String,
+}
+
+fn json_text(value: &Value, keys: &[&str]) -> String {
+    keys.iter().find_map(|key| value.get(*key)).and_then(|value| match value {
+        Value::String(text) if !text.trim().is_empty() => Some(text.trim().to_string()),
+        Value::Number(number) => Some(number.to_string()),
+        _ => None,
+    }).unwrap_or_default()
+}
+
+fn collect_catalog_entries(value: &Value, category: &str, entries: &mut Vec<CatalogEntry>, known: &mut HashSet<String>) {
+    if entries.len() >= 5000 { return; }
+    match value {
+        Value::Array(values) => values.iter().for_each(|value| collect_catalog_entries(value, category, entries, known)),
+        Value::Object(object) => {
+            let name = json_text(value, &["name", "text", "title"]);
+            if !name.is_empty() && name.len() < 120 && !name.starts_with("<") {
+                let key = format!("{category}:{name}");
+                if known.insert(key) {
+                    entries.push(CatalogEntry {
+                        name,
+                        category: category.to_string(),
+                        icon: json_text(value, &["icon", "icon_id"]),
+                        description: json_text(value, &["description", "desc"]),
+                        location: "Não informado pelo jogo".to_string(),
+                        acquisition: "Consulte os detalhes da fonte local".to_string(),
+                        vendor: "Não informado pelo jogo".to_string(),
+                        sellable: "Não informado".to_string(),
+                    });
+                }
+            }
+            object.values().for_each(|value| collect_catalog_entries(value, category, entries, known));
+        }
+        _ => {}
+    }
+}
+
+#[tauri::command]
+fn load_erdb_catalog() -> Result<Vec<CatalogEntry>, String> {
+    let local_app_data = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA nao disponivel.")?;
+    let catalog_dir = PathBuf::from(local_app_data).join("Imposer").join("catalog");
+    if !catalog_dir.is_dir() { return Ok(Vec::new()); }
+
+    let mut entries = Vec::new();
+    let mut known = HashSet::new();
+    for file in fs::read_dir(catalog_dir).map_err(|error| error.to_string())? {
+        let path = file.map_err(|error| error.to_string())?.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("json") { continue; }
+        let contents = fs::read_to_string(&path).map_err(|error| error.to_string())?;
+        let value: Value = serde_json::from_str(&contents).map_err(|error| format!("JSON invalido em {}: {error}", path.display()))?;
+        let category = path.file_stem().and_then(|value| value.to_str()).unwrap_or("Itens");
+        collect_catalog_entries(&value, category, &mut entries, &mut known);
+    }
+    Ok(entries)
 }
 
 #[tauri::command]
@@ -163,7 +231,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![open_overlay, close_overlay, validate_game_folder, inspect_regulation, run_erdb_import])
+        .invoke_handler(tauri::generate_handler![open_overlay, close_overlay, validate_game_folder, inspect_regulation, run_erdb_import, load_erdb_catalog])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Imposer");
 }
