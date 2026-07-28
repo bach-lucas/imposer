@@ -1,6 +1,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use serde::Serialize;
+use std::fs;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -34,6 +35,25 @@ struct GameInstallation {
     has_regulation: bool,
     has_data: bool,
     valid: bool,
+}
+
+#[derive(Debug, Serialize)]
+struct RegulationInspection {
+    path: String,
+    size_bytes: u64,
+    modified_unix_seconds: Option<u64>,
+    readable: bool,
+}
+
+#[tauri::command]
+fn inspect_regulation(path: String) -> Result<RegulationInspection, String> {
+    let file = PathBuf::from(path.trim());
+    let metadata = fs::metadata(&file).map_err(|error| format!("Nao foi possivel ler regulation.bin: {error}"))?;
+    if !metadata.is_file() {
+        return Err("O caminho informado nao e um arquivo.".to_string());
+    }
+    let modified_unix_seconds = metadata.modified().ok().and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).map(|duration| duration.as_secs());
+    Ok(RegulationInspection { path: file.to_string_lossy().into_owned(), size_bytes: metadata.len(), modified_unix_seconds, readable: fs::File::open(file).is_ok() })
 }
 
 #[tauri::command]
@@ -106,7 +126,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![open_overlay, close_overlay, validate_game_folder])
+        .invoke_handler(tauri::generate_handler![open_overlay, close_overlay, validate_game_folder, inspect_regulation])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Imposer");
 }
