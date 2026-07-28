@@ -3,6 +3,7 @@
 use serde::Serialize;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -54,6 +55,42 @@ fn inspect_regulation(path: String) -> Result<RegulationInspection, String> {
     }
     let modified_unix_seconds = metadata.modified().ok().and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok()).map(|duration| duration.as_secs());
     Ok(RegulationInspection { path: file.to_string_lossy().into_owned(), size_bytes: metadata.len(), modified_unix_seconds, readable: fs::File::open(file).is_ok() })
+}
+
+#[derive(Debug, Serialize)]
+struct ErdbImportResult {
+    output_dir: String,
+    message: String,
+}
+
+#[tauri::command]
+fn run_erdb_import(game_dir: String) -> Result<ErdbImportResult, String> {
+    let game_path = PathBuf::from(game_dir.trim());
+    if !game_path.is_dir() || !game_path.join("regulation.bin").is_file() {
+        return Err("A pasta Game valida nao foi encontrada.".to_string());
+    }
+
+    let local_app_data = std::env::var_os("LOCALAPPDATA").ok_or("LOCALAPPDATA nao disponivel.")?;
+    let output_dir = PathBuf::from(local_app_data).join("Imposer").join("catalog");
+    fs::create_dir_all(&output_dir).map_err(|error| format!("Nao foi possivel criar a pasta do catalogo: {error}"))?;
+
+    let python = std::env::var_os("IMPOSER_PYTHON").map(PathBuf::from).unwrap_or_else(|| {
+        PathBuf::from(std::env::var_os("LOCALAPPDATA").unwrap_or_default()).join("Programs").join("Python").join("Python312").join("python.exe")
+    });
+    let python = if python.is_file() { python } else { PathBuf::from("python") };
+
+    let source = Command::new(&python).args(["-m", "erdb", "source", "--game-dir"]).arg(&game_path).arg("--keep-cache").output().map_err(|error| format!("Nao foi possivel executar o ERDB: {error}"))?;
+    if !source.status.success() {
+        let details = String::from_utf8_lossy(&source.stderr);
+        return Err(format!("O ERDB nao conseguiu extrair os dados. A pasta precisa estar desempacotada pelo UXM. {details}"));
+    }
+
+    let generated = Command::new(&python).args(["-m", "erdb", "generate", "all", "--out"]).arg(&output_dir).output().map_err(|error| format!("Nao foi possivel gerar o catalogo ERDB: {error}"))?;
+    if !generated.status.success() {
+        return Err(format!("O ERDB extraiu os arquivos, mas falhou ao gerar o catalogo: {}", String::from_utf8_lossy(&generated.stderr)));
+    }
+
+    Ok(ErdbImportResult { output_dir: output_dir.to_string_lossy().into_owned(), message: "Catalogo local gerado pelo ERDB.".to_string() })
 }
 
 #[tauri::command]
@@ -126,7 +163,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![open_overlay, close_overlay, validate_game_folder, inspect_regulation])
+        .invoke_handler(tauri::generate_handler![open_overlay, close_overlay, validate_game_folder, inspect_regulation, run_erdb_import])
         .run(tauri::generate_context!())
         .expect("erro ao executar o Imposer");
 }

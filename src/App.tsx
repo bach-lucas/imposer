@@ -10,6 +10,7 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = new URL('../node_modules/pdfjs-dist/bui
 type DocumentItem = { name: string; dataUrl: string };
 type GameInstallation = { folder: string; has_regulation: boolean; has_data: boolean; valid: boolean };
 type RegulationInspection = { path: string; size_bytes: number; modified_unix_seconds: number | null; readable: boolean };
+type ErdbImportResult = { output_dir: string; message: string };
 type CatalogItem = { name: string; category: string; icon: string; location: string; acquisition: string; vendor: string; sellable: string; description: string };
 const DOCUMENT_KEY = 'imposer.current-document';
 const CATALOG_ITEMS: CatalogItem[] = [
@@ -76,6 +77,7 @@ function GamePathControl() {
   const [installation, setInstallation] = useState<GameInstallation | null>(null);
   const [regulation, setRegulation] = useState<RegulationInspection | null>(null);
   const [error, setError] = useState('');
+  const [importMessage, setImportMessage] = useState('');
   async function selectFolder() {
     const path = window.prompt('Cole o caminho da pasta do Elden Ring (ex.: ...\\ELDEN RING\\Game):');
     if (!path?.trim()) return;
@@ -84,8 +86,20 @@ function GamePathControl() {
       const result = await invoke<GameInstallation>('validate_game_folder', { path: path.trim() });
       setInstallation(result);
       setRegulation(result.has_regulation ? await invoke<RegulationInspection>('inspect_regulation', { path: `${result.folder}\\regulation.bin` }) : null);
+      if (result.valid) {
+        setImportMessage('Iniciando ERDB local...');
+        invoke<ErdbImportResult>('run_erdb_import', { gameDir: result.folder }).then((imported) => setImportMessage(`${imported.message} Arquivos salvos em %LOCALAPPDATA%\\Imposer\\catalog.`)).catch((reason) => setError(String(reason)));
+      }
       if (!result.valid) setError('Arquivos esperados não encontrados.');
     } catch (reason) { setInstallation(null); setError(String(reason)); }
+  }
+  async function importLocalCatalog() {
+    if (!installation?.valid) return;
+    setError(''); setImportMessage('Extraindo dados locais...');
+    try {
+      const result = await invoke<ErdbImportResult>('run_erdb_import', { gameDir: installation.folder });
+      setImportMessage(`${result.message} Arquivos salvos em %LOCALAPPDATA%\\Imposer\\catalog.`);
+    } catch (reason) { setImportMessage(''); setError(String(reason)); }
   }
   return <div className="game-path-control"><div className="game-path-heading"><span className={installation?.valid ? 'game-path-dot valid' : 'game-path-dot'} /><div><strong>Instalação local</strong><small>{installation?.valid ? 'Elden Ring detectado' : 'Ainda não configurada'}</small></div></div><button className="game-path-button" onClick={selectFolder}>{installation ? 'Verificar outra pasta' : 'Configurar pasta'}</button>{installation && <small className="game-path-result">{installation.valid ? 'Arquivos do jogo encontrados.' : 'Pasta reconhecida, mas incompleta.'}</small>}{regulation && <small className="game-path-result">regulation.bin: {(regulation.size_bytes / 1024 / 1024).toFixed(1)} MB · leitura segura pronta.</small>}{error && <small className="game-path-error">{error}</small>}</div>;
 }
