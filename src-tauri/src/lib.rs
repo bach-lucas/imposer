@@ -17,6 +17,9 @@ pub fn run() {
         .setup(|app| {
             #[cfg(desktop)]
             {
+                if let Some(overlay) = app.get_webview_window("overlay") {
+                    overlay.hide()?;
+                }
                 let toggle_shortcut = Shortcut::new(Some(Modifiers::CONTROL), Code::F8);
                 let protection_shortcut = Shortcut::new(Some(Modifiers::CONTROL), Code::KeyL);
                 let app_handle = app.handle().clone();
