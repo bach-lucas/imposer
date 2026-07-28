@@ -92,11 +92,13 @@ fn collect_catalog_entries(value: &Value, category: &str, entries: &mut Vec<Cata
         Value::Object(object) => {
             let name = json_text(value, &["name", "text", "title"]);
             if !name.is_empty() && name.len() < 120 && !name.starts_with("<") {
-                let key = format!("{category}:{name}");
+                let item_category = if category == "items" { json_text(value, &["category"]) } else { category.to_string() };
+                let item_category = if item_category.is_empty() { category.to_string() } else { item_category };
+                let key = format!("{item_category}:{name}");
                 if known.insert(key) {
                     entries.push(CatalogEntry {
                         name,
-                        category: category.to_string(),
+                        category: item_category,
                         icon: json_text(value, &["icon", "icon_id"]),
                         description: json_text(value, &["description", "desc"]),
                         location: "Não informado pelo jogo".to_string(),
@@ -152,19 +154,13 @@ fn run_erdb_import(game_dir: String) -> Result<ErdbImportResult, String> {
     });
     let python = if python.is_file() { python } else { PathBuf::from("python") };
 
-    let source = Command::new(&python).args(["-m", "erdb", "source", "--game-dir"]).arg(&game_path).arg("--keep-cache").output().map_err(|error| format!("Nao foi possivel executar o ERDB: {error}"))?;
-    if !source.status.success() {
-        let details = format!("{}\n{}", String::from_utf8_lossy(&source.stdout), String::from_utf8_lossy(&source.stderr));
-        if details.contains("Unknown DCX format") {
-            return Err("O ERDB foi executado, mas esta versao nao suporta o formato atual do regulation.bin (Elden Ring 1.12 ou posterior). O UXM e o .NET estao funcionando; precisamos usar um parser atualizado, como Smithbox/WitchyBND.".to_string());
-        }
-        return Err(format!("O ERDB nao conseguiu extrair os dados. A pasta precisa estar desempacotada pelo UXM. {details}"));
-    }
-
-    let generated = Command::new(&python).args(["-m", "erdb", "generate", "all", "--out"]).arg(&output_dir).output().map_err(|error| format!("Nao foi possivel gerar o catalogo ERDB: {error}"))?;
-    if !generated.status.success() {
-        return Err(format!("O ERDB extraiu os arquivos, mas falhou ao gerar o catalogo: {}", String::from_utf8_lossy(&generated.stderr)));
-    }
+    let witchy = output_dir.parent().unwrap_or(&output_dir).join("tools").join("WitchyBND").join("WitchyBND.exe");
+    if !witchy.is_file() { return Err("WitchyBND atualizado nao foi encontrado em %LOCALAPPDATA%\\Imposer\\tools\\WitchyBND.".to_string()); }
+    let project_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().map(PathBuf::from).unwrap_or_else(|| PathBuf::from("."));
+    let script = project_root.join("scripts").join("parse_witchy_catalog.py");
+    if !script.is_file() { return Err("Conversor local do catalogo nao foi encontrado no projeto.".to_string()); }
+    let generated = Command::new(&python).arg(&script).arg(&game_path).arg(&output_dir).arg(&witchy).output().map_err(|error| format!("Nao foi possivel executar o conversor local: {error}"))?;
+    if !generated.status.success() { return Err(format!("O parser local falhou: {}", String::from_utf8_lossy(&generated.stderr))); }
 
     Ok(ErdbImportResult { output_dir: output_dir.to_string_lossy().into_owned(), message: "Catalogo local gerado pelo ERDB.".to_string() })
 }
